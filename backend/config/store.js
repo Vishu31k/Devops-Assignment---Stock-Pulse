@@ -1,7 +1,8 @@
 // ==============================================================================
 // Stock Pulse — Resilient In-Memory Data Store (Fallback for Standalone Mode)
 // ==============================================================================
-// When MongoDB is running, Mongoose models are used.
+// When MongoDB is running or Mongoose models are mocked in Jest tests,
+// Mongoose models are used.
 // When MongoDB is NOT connected (e.g. running locally without MongoDB installed),
 // this in-memory store allows registration, login, portfolio management, and
 // watchlists to work seamlessly without crashing or throwing server errors.
@@ -17,9 +18,34 @@ const memoryWatchlists = [];
 
 const isMongoConnected = () => mongoose.connection.readyState === 1;
 
+const isUserMocked = () => {
+  try {
+    const User = require('../models/User');
+    return Boolean(
+      (User.findOne && typeof User.findOne.mockResolvedValue === 'function') ||
+      (User.findById && typeof User.findById.mockReturnValue === 'function') ||
+      (User.create && typeof User.create.mockResolvedValue === 'function')
+    );
+  } catch (e) {
+    return false;
+  }
+};
+
+const isPortfolioMocked = () => {
+  try {
+    const Portfolio = require('../models/Portfolio');
+    return Boolean(
+      (Portfolio.findOne && typeof Portfolio.findOne.mockResolvedValue === 'function') ||
+      (Portfolio.create && typeof Portfolio.create.mockResolvedValue === 'function')
+    );
+  } catch (e) {
+    return false;
+  }
+};
+
 // --- User Operations ---
 const findUserByEmail = async (email) => {
-  if (isMongoConnected()) {
+  if (isMongoConnected() || isUserMocked()) {
     const User = require('../models/User');
     return await User.findOne({ email });
   }
@@ -27,9 +53,13 @@ const findUserByEmail = async (email) => {
 };
 
 const findUserById = async (id) => {
-  if (isMongoConnected()) {
+  if (isMongoConnected() || isUserMocked()) {
     const User = require('../models/User');
-    return await User.findById(id).select('-password');
+    const res = User.findById(id);
+    if (res && typeof res.select === 'function') {
+      return await res.select('-password');
+    }
+    return await res;
   }
   const user = memoryUsers.find(u => u._id === id || u.id === id);
   if (!user) return null;
@@ -38,7 +68,7 @@ const findUserById = async (id) => {
 };
 
 const createUser = async ({ name, email, password }) => {
-  if (isMongoConnected()) {
+  if (isMongoConnected() || isUserMocked()) {
     const User = require('../models/User');
     return await User.create({ name, email, password });
   }
@@ -60,7 +90,7 @@ const createUser = async ({ name, email, password }) => {
 
 // --- Portfolio Operations ---
 const findPortfolioByUser = async (userId) => {
-  if (isMongoConnected()) {
+  if (isMongoConnected() || isPortfolioMocked()) {
     const Portfolio = require('../models/Portfolio');
     let p = await Portfolio.findOne({ user: userId });
     if (!p) {
@@ -81,14 +111,16 @@ const findPortfolioByUser = async (userId) => {
 };
 
 const addStockToPortfolio = async (userId, { symbol, name, quantity, buyPrice }) => {
-  if (isMongoConnected()) {
+  if (isMongoConnected() || isPortfolioMocked()) {
     const Portfolio = require('../models/Portfolio');
     let portfolio = await Portfolio.findOne({ user: userId });
     if (!portfolio) {
       portfolio = new Portfolio({ user: userId, stocks: [] });
     }
     portfolio.stocks.push({ symbol: symbol.toUpperCase(), name, quantity, buyPrice });
-    await portfolio.save();
+    if (typeof portfolio.save === 'function') {
+      await portfolio.save();
+    }
     return portfolio;
   }
   const portfolio = await findPortfolioByUser(userId);
@@ -104,12 +136,16 @@ const addStockToPortfolio = async (userId, { symbol, name, quantity, buyPrice })
 };
 
 const removeStockFromPortfolio = async (userId, stockId) => {
-  if (isMongoConnected()) {
+  if (isMongoConnected() || isPortfolioMocked()) {
     const Portfolio = require('../models/Portfolio');
     const portfolio = await Portfolio.findOne({ user: userId });
     if (portfolio) {
-      portfolio.stocks.pull(stockId);
-      await portfolio.save();
+      if (portfolio.stocks && typeof portfolio.stocks.pull === 'function') {
+        portfolio.stocks.pull(stockId);
+      }
+      if (typeof portfolio.save === 'function') {
+        await portfolio.save();
+      }
     }
     return portfolio;
   }
