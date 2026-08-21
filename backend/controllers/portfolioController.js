@@ -1,4 +1,4 @@
-const Portfolio = require('../models/Portfolio');
+const store = require('../config/store');
 const axios = require('axios');
 
 // Helper to get mock price for development/testing
@@ -9,18 +9,10 @@ const getMockPrice = () => 150.25;
 // @access  Private
 const getPortfolio = async (req, res) => {
   try {
-    let portfolio = await Portfolio.findOne({ user: req.user._id });
-
-    if (!portfolio) {
-      // Create empty portfolio if none exists
-      portfolio = await Portfolio.create({
-        user: req.user._id,
-        stocks: []
-      });
-    }
-
+    const portfolio = await store.findPortfolioByUser(req.user._id);
     res.json(portfolio);
   } catch (error) {
+    console.error('getPortfolio error:', error.message);
     res.status(500).json({ message: 'Server error fetching portfolio' });
   }
 };
@@ -36,27 +28,16 @@ const addStock = async (req, res) => {
       return res.status(400).json({ message: 'Please provide symbol, quantity, and buyPrice' });
     }
 
-    let portfolio = await Portfolio.findOne({ user: req.user._id });
-
-    if (!portfolio) {
-      portfolio = new Portfolio({
-        user: req.user._id,
-        stocks: []
-      });
-    }
-
-    // Add stock
-    portfolio.stocks.push({
-      symbol: symbol.toUpperCase(),
+    const portfolio = await store.addStockToPortfolio(req.user._id, {
+      symbol,
       name,
       quantity,
       buyPrice
     });
 
-    await portfolio.save();
-
     res.status(201).json(portfolio);
   } catch (error) {
+    console.error('addStock error:', error.message);
     res.status(500).json({ message: 'Server error adding stock' });
   }
 };
@@ -67,20 +48,10 @@ const addStock = async (req, res) => {
 const removeStock = async (req, res) => {
   try {
     const { stockId } = req.params;
-
-    const portfolio = await Portfolio.findOne({ user: req.user._id });
-
-    if (!portfolio) {
-      return res.status(404).json({ message: 'Portfolio not found' });
-    }
-
-    // Remove stock using pull
-    portfolio.stocks.pull(stockId);
-    
-    await portfolio.save();
-
+    const portfolio = await store.removeStockFromPortfolio(req.user._id, stockId);
     res.json(portfolio);
   } catch (error) {
+    console.error('removeStock error:', error.message);
     res.status(500).json({ message: 'Server error removing stock' });
   }
 };
@@ -90,9 +61,9 @@ const removeStock = async (req, res) => {
 // @access  Private
 const getPortfolioSummary = async (req, res) => {
   try {
-    const portfolio = await Portfolio.findOne({ user: req.user._id });
+    const portfolio = await store.findPortfolioByUser(req.user._id);
 
-    if (!portfolio || portfolio.stocks.length === 0) {
+    if (!portfolio || !portfolio.stocks || portfolio.stocks.length === 0) {
       return res.json({
         stocks: [],
         totalInvested: 0,
@@ -120,22 +91,21 @@ const getPortfolioSummary = async (req, res) => {
           }
         } catch (err) {
           console.error(`Error fetching price for ${stock.symbol}:`, err.message);
-          // fallback to mock price if API fails
         }
       }
 
-      const invested = stock.quantity * stock.buyPrice;
-      const currentValue = stock.quantity * currentPrice;
+      const invested = Number(stock.quantity) * Number(stock.buyPrice);
+      const currentValue = Number(stock.quantity) * currentPrice;
       const profitLoss = currentValue - invested;
-      const profitLossPercent = (profitLoss / invested) * 100;
+      const profitLossPercent = invested > 0 ? (profitLoss / invested) * 100 : 0;
 
       totalInvested += invested;
       totalCurrentValue += currentValue;
 
       stocksSummary.push({
-        _id: stock._id,
+        _id: stock._id || stock.id,
         symbol: stock.symbol,
-        name: stock.name,
+        name: stock.name || stock.symbol,
         quantity: stock.quantity,
         buyPrice: stock.buyPrice,
         currentPrice,
@@ -157,7 +127,7 @@ const getPortfolioSummary = async (req, res) => {
       totalProfitLossPercent
     });
   } catch (error) {
-    console.error(error);
+    console.error('getPortfolioSummary error:', error.message);
     res.status(500).json({ message: 'Server error fetching portfolio summary' });
   }
 };

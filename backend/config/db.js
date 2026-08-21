@@ -11,8 +11,7 @@ const connectDB = async () => {
       console.log('MongoDB URI missing. Skipping connection (this is fine for tests)');
     }
   } catch (error) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
+    console.warn(`MongoDB not connected (${error.message}). Running in mock/standalone mode.`);
   }
 };
 

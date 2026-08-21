@@ -1,21 +1,14 @@
-const Watchlist = require('../models/Watchlist');
+const store = require('../config/store');
 
 // @desc    Get user watchlist
 // @route   GET /api/watchlist
 // @access  Private
 const getWatchlist = async (req, res) => {
   try {
-    let watchlist = await Watchlist.findOne({ user: req.user._id });
-
-    if (!watchlist) {
-      watchlist = await Watchlist.create({
-        user: req.user._id,
-        stocks: []
-      });
-    }
-
+    const watchlist = await store.findWatchlistByUser(req.user._id);
     res.json(watchlist);
   } catch (error) {
+    console.error('getWatchlist error:', error.message);
     res.status(500).json({ message: 'Server error fetching watchlist' });
   }
 };
@@ -28,35 +21,13 @@ const addToWatchlist = async (req, res) => {
     const { symbol, name } = req.body;
 
     if (!symbol) {
-      return res.status(400).json({ message: 'Please provide symbol' });
+      return res.status(400).json({ message: 'Please provide a stock symbol' });
     }
 
-    let watchlist = await Watchlist.findOne({ user: req.user._id });
-
-    if (!watchlist) {
-      watchlist = new Watchlist({
-        user: req.user._id,
-        stocks: []
-      });
-    }
-
-    // Check if symbol already exists
-    const exists = watchlist.stocks.find(s => s.symbol === symbol.toUpperCase());
-    
-    if (exists) {
-      return res.status(400).json({ message: 'Stock already in watchlist' });
-    }
-
-    // Add stock
-    watchlist.stocks.push({
-      symbol: symbol.toUpperCase(),
-      name
-    });
-
-    await watchlist.save();
-
+    const watchlist = await store.addStockToWatchlist(req.user._id, { symbol, name });
     res.status(201).json(watchlist);
   } catch (error) {
+    console.error('addToWatchlist error:', error.message);
     res.status(500).json({ message: 'Server error adding to watchlist' });
   }
 };
@@ -67,19 +38,10 @@ const addToWatchlist = async (req, res) => {
 const removeFromWatchlist = async (req, res) => {
   try {
     const { stockId } = req.params;
-
-    const watchlist = await Watchlist.findOne({ user: req.user._id });
-
-    if (!watchlist) {
-      return res.status(404).json({ message: 'Watchlist not found' });
-    }
-
-    watchlist.stocks.pull(stockId);
-    
-    await watchlist.save();
-
+    const watchlist = await store.removeStockFromWatchlist(req.user._id, stockId);
     res.json(watchlist);
   } catch (error) {
+    console.error('removeFromWatchlist error:', error.message);
     res.status(500).json({ message: 'Server error removing from watchlist' });
   }
 };

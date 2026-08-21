@@ -1,9 +1,9 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const store = require('../config/store');
 
 // Generate JWT token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'secret', {
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'stockpulse_secret_key', {
     expiresIn: '30d',
   });
 };
@@ -20,14 +20,14 @@ const registerUser = async (req, res) => {
     }
 
     // Check if user exists
-    const userExists = await User.findOne({ email });
+    const userExists = await store.findUserByEmail(email);
 
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
     // Create user
-    const user = await User.create({
+    const user = await store.createUser({
       name,
       email,
       password,
@@ -35,16 +35,17 @@ const registerUser = async (req, res) => {
 
     if (user) {
       res.status(201).json({
-        _id: user.id,
+        _id: user._id || user.id,
         name: user.name,
         email: user.email,
-        token: generateToken(user._id),
+        token: generateToken(user._id || user.id),
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
     }
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    console.error('Registration error:', error.message);
+    res.status(500).json({ message: 'Server error during registration' });
   }
 };
 
@@ -56,20 +57,21 @@ const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     // Check for user email
-    const user = await User.findOne({ email });
+    const user = await store.findUserByEmail(email);
 
     if (user && (await user.matchPassword(password))) {
       res.json({
-        _id: user.id,
+        _id: user._id || user.id,
         name: user.name,
         email: user.email,
-        token: generateToken(user._id),
+        token: generateToken(user._id || user.id),
       });
     } else {
       res.status(401).json({ message: 'Invalid credentials' });
     }
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    console.error('Login error:', error.message);
+    res.status(500).json({ message: 'Server error during login' });
   }
 };
 
@@ -80,7 +82,7 @@ const getUserProfile = async (req, res) => {
   try {
     res.status(200).json(req.user);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error fetching profile' });
   }
 };
 
