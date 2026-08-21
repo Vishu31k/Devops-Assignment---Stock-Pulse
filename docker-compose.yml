@@ -1,0 +1,92 @@
+# ==============================================================================
+# Stock Pulse — Docker Compose Configuration
+# ==============================================================================
+# This file defines all three services (containers) that make up the
+# Stock Pulse application stack:
+#   1. frontend  — React UI served by nginx
+#   2. backend   — Node.js/Express API server
+#   3. db        — MongoDB database
+#
+# Usage:
+#   docker compose up -d --build    Start all services in detached mode
+#   docker compose down             Stop and remove all containers
+#   docker compose logs -f          View live logs from all services
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  # --------------------------------------------------------------------------
+  # Frontend Service
+  # --------------------------------------------------------------------------
+  # Builds the React app and serves it via nginx.
+  # Nginx also proxies /api/* requests to the backend container.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: stockpulse_frontend
+    ports:
+      - "3000:3000"        # Map host port 3000 to container port 3000
+    depends_on:
+      - backend            # Wait for backend to start first
+    networks:
+      - stockpulse-network
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Backend Service
+  # --------------------------------------------------------------------------
+  # Runs the Node.js/Express API server.
+  # Connects to MongoDB and the Alpha Vantage external API.
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stockpulse_backend
+    ports:
+      - "5000:5000"        # Map host port 5000 to container port 5000
+    environment:
+      # These environment variables configure the backend.
+      # In production, use a .env file or Docker secrets instead.
+      - PORT=5000
+      - MONGO_URI=mongodb://db:27017/stockpulse
+      - JWT_SECRET=${JWT_SECRET:-stockpulse_jwt_secret_2024}
+      - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY:-demo}
+    depends_on:
+      - db                 # Wait for database to start first
+    networks:
+      - stockpulse-network
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Database Service
+  # --------------------------------------------------------------------------
+  # Runs MongoDB for persistent storage of users, portfolios, and watchlists.
+  # Data is stored in a Docker volume so it persists across container restarts.
+  db:
+    image: mongo:7.0       # Use official MongoDB 7.0 image
+    container_name: stockpulse_mongodb
+    ports:
+      - "27017:27017"      # Map host port 27017 to container port 27017
+    volumes:
+      - mongodb_data:/data/db    # Persist database data in a named volume
+    networks:
+      - stockpulse-network
+    restart: unless-stopped
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+# All three services share this network so they can communicate by service name.
+# For example, the backend connects to MongoDB using "mongodb://db:27017".
+networks:
+  stockpulse-network:
+    driver: bridge
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+# Named volume to persist MongoDB data across container restarts.
+volumes:
+  mongodb_data:
